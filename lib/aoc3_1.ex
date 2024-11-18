@@ -8,7 +8,8 @@ defmodule AOC3_1 do
       "U" <> n -> {:u, String.to_integer(n)}
       "D" <> n -> {:d, String.to_integer(n)}
     end)
-    |> Enum.reduce([{0,0}],&add_points/2)
+
+    # |> Enum.reduce([{0,0}],&add_points/2)
   end
 
   def add_point() do

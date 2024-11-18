@@ -284,13 +284,14 @@ end
 Dog.eat("Dogo")
 Bird.fly("Birdo")
 
+
 """
 
 defmodule KeyValueStore do
   use GenServer
 
   def start do
-    GenServer.start(KeyValueStore, nil)
+    GenServer.start(KeyValueStore, nil, name: :state)
   end
 
   def put(pid, key, value) do
@@ -301,14 +302,24 @@ defmodule KeyValueStore do
     GenServer.call(pid, {:get, key})
   end
 
+  @impl true
   def init(init_state \\ nil) do
+    # :timer.send_interval(5000, :cleanup)
     {:ok, init_state || %{}}
   end
 
+  @impl true
+  def handle_info(:cleanup, a_state) do
+    IO.puts("removing :a...")
+    {:noreply, Map.delete(a_state, :a)}
+  end
+
+  @impl true
   def handle_cast({:put, key, value}, curr_state) do
     {:noreply, Map.put(curr_state, key, value)}
   end
 
+  @impl GenServer
   def handle_call({:get, key}, _, curr_state) do
     {:reply, Map.get(curr_state, key), curr_state}
   end
@@ -317,3 +328,5 @@ end
 {:ok, pid} = KeyValueStore.start()
 KeyValueStore.put(pid, :a, :b)
 KeyValueStore.get(pid, :a) |> IO.inspect()
+
+GenServer.call(:state, {:get, :a}) |> IO.inspect()

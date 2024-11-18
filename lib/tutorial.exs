@@ -183,8 +183,8 @@ end
 # This works because we are reusing :ok atom
 1..1_048_577 |> Enum.map(fn _ -> String.to_existing_atom("ok") end) |> IO.inspect()
 
-"""
 
+# CHAPTER 6
 defmodule ServerProcess do
   def start(callback_mod) do
     spawn(fn ->
@@ -195,21 +195,28 @@ defmodule ServerProcess do
 
   defp loop(callback_mod, curr_state) do
     receive do
-      {request, caller} ->
+      {:call, request, caller} ->
         {response, new_state} = callback_mod.handle_call(request, curr_state)
-
         send(caller, {:response, response})
+        loop(callback_mod, new_state)
+
+      {:cast, request} ->
+        new_state = callback_mod.handle_cast(request, curr_state)
         loop(callback_mod, new_state)
     end
   end
 
   def call(server_pid, request) do
-    send(server_pid, {request, self()})
+    send(server_pid, {:call, request, self()})
 
     receive do
       {:response, response} ->
         response
     end
+  end
+
+  def cast(server_pid, request) do
+    send(server_pid, {:cast, request})
   end
 end
 
@@ -225,8 +232,88 @@ defmodule KeyValueStore do
   def handle_call({:get, key}, curr_state) do
     {Map.get(curr_state, key), curr_state}
   end
+
+  def handle_call({:delete, key}, curr_state) do
+    {Map.get(curr_state, key), Map.delete(curr_state, key)}
+  end
+
+  def handle_cast({:delete, key}, curr_state) do
+    Map.delete(curr_state, key)
+  end
+
+  def handle_cast({:put, key, value}, curr_state) do
+    Map.put(curr_state, key, value)
+  end
 end
 
 pid = ServerProcess.start(KeyValueStore)
 ServerProcess.call(pid, {:put, :some_key, :some_value}) |> IO.inspect()
 ServerProcess.call(pid, {:get, :some_key}) |> IO.inspect()
+ServerProcess.cast(pid, {:put, :k1, :v1})
+# You can't make a cast on get request because cast don't wait for the response
+# from the server. You can do put and other modifications.
+# ServerProcess.cast(pid, {:get, :k1})
+ServerProcess.call(pid, {:get, :k1}) |> IO.inspect()
+ServerProcess.cast(pid, {:delete, :k1})
+ServerProcess.call(pid, {:delete, :some_key}) |> IO.inspect()
+ServerProcess.call(pid, {:get, :some_key}) |> IO.inspect()
+
+
+defmodule FlyingBehaviour do
+  @callback fly(obj :: String.t()) :: nil
+end
+
+defmodule EatingBehaviour do
+  @callback eat(obj :: String.t()) :: nil
+end
+
+defmodule Dog do
+  @behaviour EatingBehaviour
+  def eat(dog) do
+    IO.puts(dog <> " eats!")
+  end
+end
+
+defmodule Bird do
+  @behaviour FlyingBehaviour
+  def fly(bird) do
+    IO.puts(bird <> " flies!")
+  end
+end
+
+Dog.eat("Dogo")
+Bird.fly("Birdo")
+
+"""
+
+defmodule KeyValueStore do
+  use GenServer
+
+  def start do
+    GenServer.start(KeyValueStore, nil)
+  end
+
+  def put(pid, key, value) do
+    GenServer.cast(pid, {:put, key, value})
+  end
+
+  def get(pid, key) do
+    GenServer.call(pid, {:get, key})
+  end
+
+  def init(init_state \\ nil) do
+    {:ok, init_state || %{}}
+  end
+
+  def handle_cast({:put, key, value}, curr_state) do
+    {:noreply, Map.put(curr_state, key, value)}
+  end
+
+  def handle_call({:get, key}, _, curr_state) do
+    {:reply, Map.get(curr_state, key), curr_state}
+  end
+end
+
+{:ok, pid} = KeyValueStore.start()
+KeyValueStore.put(pid, :a, :b)
+KeyValueStore.get(pid, :a) |> IO.inspect()

@@ -285,8 +285,6 @@ Dog.eat("Dogo")
 Bird.fly("Birdo")
 
 
-"""
-
 defmodule KeyValueStore do
   use GenServer
 
@@ -330,3 +328,96 @@ KeyValueStore.put(pid, :a, :b)
 KeyValueStore.get(pid, :a) |> IO.inspect()
 
 GenServer.call(:state, {:get, :a}) |> IO.inspect()
+"""
+
+defmodule KeyValueStore.Database do
+  @behaviour GenServer
+
+  def start do
+    GenServer.start(__MODULE__, nil, name: __MODULE__)
+  end
+
+  @db_folder "./persistent"
+  @impl GenServer
+  def init(_) do
+    File.mkdir_p!(@db_folder)
+    {:ok, start_workers()}
+  end
+
+  defp start_workers() do
+    for id <- 1..3, into: %{} do
+      {:ok, pid} = KeyValueStore.DatabaseWorker.start(@db_folder)
+      {id - 1, pid}
+    end
+  end
+
+  def store(key, data) do
+    key
+    |> choose_worker()
+    |> KeyValueStore.DatabaseWorker.store(key, data)
+  end
+
+  defp choose_worker(key) do
+    GenServer.call(__MODULE__, {:choose_worker, key})
+  end
+
+  @impl GenServer
+  def handle_call({:choose_worker, key}, _, state) do
+    worker_key = :erlang.phash2(key, 3)
+    IO.puts("Returning worker #{worker_key} from key #{key}")
+    {:reply, Map.get(state, worker_key), state}
+  end
+
+  def get(key) do
+    key |> choose_worker() |> KeyValueStore.DatabaseWorker.get(key)
+  end
+end
+
+defmodule KeyValueStore.DatabaseWorker do
+  @behaviour GenServer
+
+  def start(db_folder) do
+    GenServer.start(__MODULE__, db_folder)
+  end
+
+  @impl GenServer
+  def init(db_folder) do
+    {:ok, db_folder}
+  end
+
+  def store(worker_key, key, data) do
+    GenServer.cast(worker_key, {:store, key, data})
+  end
+
+  @impl GenServer
+  def handle_cast({:store, key, data}, state) do
+    Path.join(state, key) |> File.write!(:erlang.term_to_binary(data))
+    IO.puts("Storing key: #{key}, data: #{data}")
+    {:noreply, state}
+  end
+
+  def get(worker_key, key) do
+    GenServer.call(worker_key, {:get, key})
+  end
+
+  @impl GenServer
+  def handle_call({:get, key}, caller, state) do
+    spawn(fn ->
+      data =
+        Path.join(state, to_string(key)) |> File.read!() |> :erlang.binary_to_term()
+
+      IO.puts("Sending key: #{inspect(key)}, data: #{data}, to caller: #{inspect(caller)}")
+      GenServer.reply(caller, data)
+    end)
+
+    {:noreply, state}
+  end
+end
+
+{:ok, pid} = KeyValueStore.Database.start()
+KeyValueStore.Database.store("data", "my_data")
+KeyValueStore.Database.get("data") |> IO.inspect()
+KeyValueStore.Database.store("neandertal", "uga_ubga")
+KeyValueStore.Database.get("neandertal") |> IO.inspect()
+KeyValueStore.Database.store("andrzej", "lubie_placki")
+KeyValueStore.Database.get("andrzej") |> IO.inspect()

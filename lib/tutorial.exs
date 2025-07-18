@@ -328,7 +328,6 @@ KeyValueStore.put(pid, :a, :b)
 KeyValueStore.get(pid, :a) |> IO.inspect()
 
 GenServer.call(:state, {:get, :a}) |> IO.inspect()
-"""
 
 defmodule KeyValueStore.Database do
   @behaviour GenServer
@@ -421,3 +420,19 @@ KeyValueStore.Database.store("neandertal", "uga_ubga")
 KeyValueStore.Database.get("neandertal") |> IO.inspect()
 KeyValueStore.Database.store("andrzej", "lubie_placki")
 KeyValueStore.Database.get("andrzej") |> IO.inspect()
+
+spawn(fn ->
+  spawn_link(fn ->
+    # This will not be printed
+    IO.puts("Linked process ended")
+  end)
+
+  spawn(fn ->
+    # This will be printed
+    IO.puts("Separate process ended")
+  end)
+
+  raise("Excpetion from process 1")
+end)
+
+"""
